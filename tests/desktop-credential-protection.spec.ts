@@ -269,6 +269,13 @@ describe('at-rest key provider', () => {
     const cn = new WorkBuddyAtRestKeyProvider({ discovery: 'macos-workbuddy' })
     if (process.platform === 'darwin') {
       expect(cn.helperPath()).toBe('/Applications/WorkBuddy.app/Contents/MacOS/Electron')
+    } else if (process.platform === 'win32') {
+      // Windows probes the install roots instead of naming one layout, so
+      // whether a binary is found depends on the machine — only the shape is
+      // assertable here. The probe itself is pinned in
+      // tests/electron-windows-default.spec.ts.
+      const found = cn.helperPath()
+      expect(found === undefined || found.endsWith('WorkBuddy.exe')).toBe(true)
     } else {
       expect(cn.helperPath()).toBeUndefined()
     }

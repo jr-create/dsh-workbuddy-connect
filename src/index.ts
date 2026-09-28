@@ -18,6 +18,11 @@ import z from '@deepseek-ai/schemastery'
 import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-attachment'
+// The `loader/volatile-update` event type is declared locally below (see the
+// `declare module` block under the apply export): the event lives in the
+// loader's own type augmentation, and pulling the loader package in as a
+// dependency would change this plugin's peer-resolution identity for every
+// 0.1.6-generation package it also depends on.
 import { WorkBuddyCredentialStore, type WorkBuddyCredential, type WorkBuddyStoreOptions } from './auth.ts'
 import { atRestKeyProviderFor, WorkBuddyAtRestKeyProvider } from './desktop-credential-protection.ts'
 import { FALLBACK_WORKBUDDY_AI_MODELS, FALLBACK_WORKBUDDY_MODELS, WorkBuddyCatalog } from './catalog.ts'
@@ -236,22 +241,59 @@ export interface Config {
   useMaximumContextWindow?: boolean
 }
 
-/** Explicit CN desktop auth-file path (shared by the plugin schema and its section). */
-const AUTH_FILE_FIELD = z.string().description('WorkBuddy desktop auth file (defaults to the app\'s own location)')
-/** Explicit international desktop auth-file path (shared by the plugin schema and its section). */
-const AUTH_FILE_AI_FIELD = z.string().description('WorkBuddy AI desktop auth file (defaults to the app\'s own location)')
-/** Probe authorization (shared by the plugin schema and the CN section). */
-const PROBE_CONSENT_FIELD = z.boolean().default(false)
-  .description('Authorize reasoning-effort probes (each probe sends real requests that may consume credit)')
-const MAXIMUM_CONTEXT_WINDOW_FIELD = z.boolean().default(true)
-  .description('Use the largest context window declared by WorkBuddy AI when alternatives are available (on by default)')
+/**
+ * Mark a config field volatile where the host's schemastery supports it.
+ *
+ * Volatility is what makes the DSH 0.1.7 settings page able to expose and
+ * commit these fields (the volatile-form transport). Older hosts ship a
+ * schemastery without `.volatile()` — the method simply does not exist there
+ * — so the guard degrades to a no-op and the field stays plain.
+ */
+function maybeVolatile<T extends z>(field: T): T {
+  return typeof (field as unknown as Record<string, unknown>)['volatile'] === 'function'
+    ? (field as unknown as { volatile: () => T }).volatile()
+    : field
+}
 
-export const Config: z<Config> = z.object({
+/**
+ * Explicit CN desktop auth-file path (shared by the plugin schema and its
+ * section). Volatile so the DSH 0.1.7 settings form exposes it, and so a form
+ * write commits into the running fiber instead of remounting the plugin.
+ */
+const AUTH_FILE_FIELD = maybeVolatile(z.string().description('WorkBuddy desktop auth file (defaults to the app\'s own location)'))
+/**
+ * Explicit international desktop auth-file path (shared by the plugin schema
+ * and its section). Volatile for the same reasons as {@link AUTH_FILE_FIELD}.
+ */
+const AUTH_FILE_AI_FIELD = maybeVolatile(z.string().description('WorkBuddy AI desktop auth file (defaults to the app\'s own location)'))
+/** Probe authorization (shared by the plugin schema and the CN section). */
+const PROBE_CONSENT_FIELD = maybeVolatile(z.boolean().default(false)
+  .description('Authorize reasoning-effort probes (each probe sends real requests that may consume credit)'))
+const MAXIMUM_CONTEXT_WINDOW_FIELD = maybeVolatile(z.boolean().default(true)
+  .description('Use the largest context window declared by WorkBuddy AI when alternatives are available (on by default)'))
+
+/**
+ * The three section schemas. The `.volatile()` wrappers change the *runtime*
+ * meta only (settings-form exposure + Ref-commit semantics) — the values the
+ * plugin reads are the same `Config` fields as before, so all three keep the
+ * `z<Config>` annotation through one cast: the wrapper's static type widens
+ * `meta.default` into `Volatile<T>`, which is a schema-metadata artifact the
+ * caller never sees, not a change in the resolved value's shape.
+ *
+ * The ENTRY schema (`Config`) carries the volatile marks: it is what the
+ * 0.1.7 settings page reads and writes through. The two LEGACY sections stay
+ * plain on purpose: they exist only on 0.1.5/0.1.6 hosts, where the old
+ * section transport resolves every write through the schema and would store
+ * Refs verbatim — a volatile field there would break both reads and writes.
+ * The plugin reads its live values through `current()` (entry refs) or the
+ * merged section sources (legacy), never through both at once.
+ */
+export const Config = z.object({
   authFile: AUTH_FILE_FIELD,
   authFileAI: AUTH_FILE_AI_FIELD,
   probeConsent: PROBE_CONSENT_FIELD,
   useMaximumContextWindow: MAXIMUM_CONTEXT_WINDOW_FIELD,
-})
+}) as unknown as z<Config>
 
 /**
  * The CN side's settings section: only the fields that side edits.
@@ -261,17 +303,21 @@ export const Config: z<Config> = z.object({
  * `probeConsent` lives here because it predates the second variant; it gates no
  * current code path (only manual, per-click-confirmed probes run), so it is left
  * where existing users set it rather than moved and re-asked.
+ *
+ * Plain fields by design — see the volatility note above {@link Config}.
  */
-const CN_SECTION: z<Config> = z.object({
-  authFile: AUTH_FILE_FIELD,
-  probeConsent: PROBE_CONSENT_FIELD,
-})
+const CN_SECTION = z.object({
+  authFile: z.string().description('WorkBuddy desktop auth file (defaults to the app\'s own location)'),
+  probeConsent: z.boolean().default(false)
+    .description('Authorize reasoning-effort probes (each probe sends real requests that may consume credit)'),
+}) as unknown as z<Config>
 
-/** The international card's settings section and its context-window preference. */
-const AI_SECTION: z<Config> = z.object({
-  authFileAI: AUTH_FILE_AI_FIELD,
-  useMaximumContextWindow: MAXIMUM_CONTEXT_WINDOW_FIELD,
-})
+/** The international card's settings section and its context-window preference. Plain for the same reason. */
+const AI_SECTION = z.object({
+  authFileAI: z.string().description('WorkBuddy AI desktop auth file (defaults to the app\'s own location)'),
+  useMaximumContextWindow: z.boolean().default(true)
+    .description('Use the largest context window declared by WorkBuddy AI when alternatives are available (on by default)'),
+}) as unknown as z<Config>
 
 /** One variant's live runtime, assembled by {@link createVariantRuntime}. */
 interface VariantRuntime {
@@ -598,6 +644,22 @@ async function startVariant(ctx: Context, runtime: VariantRuntime): Promise<bool
 }
 
 /**
+ * The loader's volatile-commit event, declared locally with the same shape as
+ * `@deepseek-ai/cordis-plugin-loader`'s own augmentation (`paths` is the list
+ * of changed config paths as key arrays; every value is committed before the
+ * event dispatches). Declaring it here instead of importing the loader's
+ * types keeps this plugin's dependency graph unchanged — adding the loader as
+ * even a dev-only type dependency re-keys this plugin's peer-resolution
+ * identity for the 0.1.6-generation packages it also declares, which changes
+ * hoisting for every consumer without any behavioral gain.
+ */
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}
+
+/**
  * Start both variants: their loopback endpoints, the `workbuddy` and
  * `workbuddy-ai` providers, their configuration cards, and their
  * credential-driven catalog lifecycles.
@@ -611,7 +673,43 @@ export function apply(ctx: Context, config: Config): void {
   // Live configuration source: starts as the applied config and is replaced by
   // the settings section's source once one is installed, so edits reach the
   // probe consent gate without a restart.
-  let current = (): Config => config
+  //
+  // Volatile fields (see the schema above) arrive inside `config` wrapped in
+  // cosmokit Refs — that is how the loader commits a form write into the
+  // running fiber without remounting the plugin. The SAME objects `apply`
+  // receives are the fiber's live references, so `current()` re-unwraps them
+  // on every read and a settings-page write is served immediately. But the
+  // raw object must not leak as-is to eager consumers: `createVariantRuntime`
+  // passes the auth paths into stores, and the legacy sections use the config
+  // as their composition base (`installSection` re-resolves it through the
+  // schema, and a Ref meeting a string resolver throws). They get the plain
+  // snapshot taken here. On hosts where nothing wraps the values the unwrap
+  // is an identity pass, so both paths stay version-agnostic.
+  const plainValue = (value: unknown): unknown =>
+    value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function'
+      ? (value as { get: () => unknown }).get()
+      : value
+  const plainConfig = (source: Config): Config => {
+    const unwrapped = Object.fromEntries(Object.entries(source).map(([key, value]) => [key, plainValue(value)]))
+    return unwrapped as Config
+  }
+  const liveConfig = config
+  config = plainConfig(config)
+  let current = (): Config => plainConfig(liveConfig)
+
+  /**
+   * Apply the international card's maximum-context preference to its runtime.
+   *
+   * Shared by the legacy settings sections (0.1.5/0.1.6), the volatile-form
+   * listener (0.1.7), and the createVariantRuntime's `useMaximumContextWindow`
+   * wiring, so one preference reaches the catalog through exactly one path.
+   * Lives at apply scope because the volatile listener has no settings inject
+   * of its own on a 0.1.7 host.
+   */
+  const applyMaximumContextWindow = (next: Config): void => {
+    const runtime = runtimes.find(candidate => candidate.variant.id !== CN_VARIANT.id)
+    if (runtime?.catalog.setUseMaximumContextWindow(next.useMaximumContextWindow === true)) runtime.invalidate()
+  }
 
   /** Timers and in-flight work belonging to this plugin instance. */
   let stopped = false
@@ -871,29 +969,47 @@ export function apply(ctx: Context, config: Config): void {
      * would throw mid-inject, so the API is feature-detected: 0.1.5 and 0.1.6
      * install both legacy sections as before, while a 0.1.7 host degrades to a
      * settings-less provider — provider, picker, visibility, and the context
-     * rows all keep working; only the two settings sections and the
-     * maximum-context preference are absent, and without an exception.
+     * rows all keep working; the settings *page* (the client bundle's
+     * `settings.section` entry, which edits this entry's config through the
+     * host's volatile-form transport) and the maximum-context preference stay
+     * available; only the two legacy TUI/`settings.yaml` sections are absent,
+     * and without an exception.
      */
     if (typeof settingsCtx.settings.installSection !== 'function') {
-      ctx.logger.warn('dsh-workbuddy-connect: host settings service has no installSection API; per-variant settings and the maximum-context preference are unavailable')
+      ctx.logger.info('dsh-workbuddy-connect: host settings service has no installSection API; the settings page edits this entry\'s volatile config instead, legacy per-variant sections are unavailable')
       return
     }
     legacySettingsAvailable = true
-    /** Section sources; each falls back to its own slice when its side unloads. */
+    /**
+     * Section sources; each falls back to its own slice when its side unloads.
+     *
+     * The fallbacks read the entry snapshot — NOT `current()`: `current` is
+     * re-pointed at `merged` once both sections are installed, and a fallback
+     * calling it would recurse (merged → sources.ai → current → merged). The
+     * snapshot is exactly what an uninstalled side should serve anyway.
+     */
     const sources: { cn: () => Config, ai: () => Config } = {
       cn: () => config,
       ai: () => config,
     }
-    /** Merge both sections into the whole config the rest of the plugin reads. */
-    const merged = (): Config => ({
-      ...sources.cn().authFile === undefined ? {} : { authFile: sources.cn().authFile },
-      ...sources.cn().probeConsent === undefined ? {} : { probeConsent: sources.cn().probeConsent },
-      ...sources.ai().authFileAI === undefined ? {} : { authFileAI: sources.ai().authFileAI },
-      ...sources.ai().useMaximumContextWindow === undefined ? {} : { useMaximumContextWindow: sources.ai().useMaximumContextWindow },
-    })
-    const applyMaximumContextWindow = (next: Config): void => {
-      const runtime = runtimes.find(candidate => candidate.variant.id !== CN_VARIANT.id)
-      if (runtime?.catalog.setUseMaximumContextWindow(next.useMaximumContextWindow === true)) runtime.invalidate()
+    /**
+     * Merge both sections into the whole config the rest of the plugin reads.
+     *
+     * The presence checks go through `plainValue` because a resolved section
+     * wraps its volatile fields in Refs even when the field is absent: a raw
+     * `=== undefined` on `section.authFile` is always false once the schema
+     * declares the field volatile, and a Ref would leak into `desktopPath`
+     * (breaking the credential stores) instead of carrying the string.
+     */
+    const merged = (): Config => {
+      const cn = plainConfig(sources.cn())
+      const ai = plainConfig(sources.ai())
+      return {
+        ...cn.authFile === undefined ? {} : { authFile: cn.authFile },
+        ...cn.probeConsent === undefined ? {} : { probeConsent: cn.probeConsent },
+        ...ai.authFileAI === undefined ? {} : { authFileAI: ai.authFileAI },
+        ...ai.useMaximumContextWindow === undefined ? {} : { useMaximumContextWindow: ai.useMaximumContextWindow },
+      }
     }
     const repointStores = (): void => {
       const next = merged()
@@ -913,6 +1029,23 @@ export function apply(ctx: Context, config: Config): void {
     setMaximumContextWindow = async enabled => {
       await settingsCtx.settings.update(WORKBUDDY_AI_SETTINGS_NS, { useMaximumContextWindow: enabled })
       return { state: 'updated' }
+    }
+  })
+
+  // Legacy section writes (0.1.5/0.1.6) take effect through the install
+  // callbacks above; volatile form writes (0.1.7) take effect here. The host
+  // commits a form write into the running fiber's Refs and dispatches this
+  // event instead of remounting the plugin, so the page edit must re-point
+  // the credential stores and re-apply the context-window preference the
+  // same way `repointStores` does. `current()` unwraps the Refs, so every
+  // other reader sees the new values without extra wiring. The event is
+  // loader-owned and version-stable; on a host without volatile config it
+  // simply never fires for this plugin.
+  ctx.on('loader/volatile-update', () => {
+    const next = current()
+    applyMaximumContextWindow(next)
+    for (const runtime of runtimes) {
+      runtime.store.setDesktopPath(configuredAuthFile(next, runtime.variant))
     }
   })
 

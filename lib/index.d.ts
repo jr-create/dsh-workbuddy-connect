@@ -1609,6 +1609,22 @@ interface Config {
   /** Use the largest context window the international catalog explicitly offers. */
   useMaximumContextWindow?: boolean;
 }
+/**
+ * The three section schemas. The `.volatile()` wrappers change the *runtime*
+ * meta only (settings-form exposure + Ref-commit semantics) — the values the
+ * plugin reads are the same `Config` fields as before, so all three keep the
+ * `z<Config>` annotation through one cast: the wrapper's static type widens
+ * `meta.default` into `Volatile<T>`, which is a schema-metadata artifact the
+ * caller never sees, not a change in the resolved value's shape.
+ *
+ * The ENTRY schema (`Config`) carries the volatile marks: it is what the
+ * 0.1.7 settings page reads and writes through. The two LEGACY sections stay
+ * plain on purpose: they exist only on 0.1.5/0.1.6 hosts, where the old
+ * section transport resolves every write through the schema and would store
+ * Refs verbatim — a volatile field there would break both reads and writes.
+ * The plugin reads its live values through `current()` (entry refs) or the
+ * merged section sources (legacy), never through both at once.
+ */
 declare const Config: z<Config>;
 /**
  * The account key model-visibility preferences are stored under: the stable
@@ -1622,6 +1638,21 @@ declare const Config: z<Config>;
  * applies one account's hidden list to another.
  */
 declare function visibilityAccountOf(credential: Pick<WorkBuddyCredential, 'uid' | 'enterpriseId'>): string | undefined;
+/**
+ * The loader's volatile-commit event, declared locally with the same shape as
+ * `@deepseek-ai/cordis-plugin-loader`'s own augmentation (`paths` is the list
+ * of changed config paths as key arrays; every value is committed before the
+ * event dispatches). Declaring it here instead of importing the loader's
+ * types keeps this plugin's dependency graph unchanged — adding the loader as
+ * even a dev-only type dependency re-keys this plugin's peer-resolution
+ * identity for the 0.1.6-generation packages it also declares, which changes
+ * hoisting for every consumer without any behavioral gain.
+ */
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void;
+  }
+}
 /**
  * Start both variants: their loopback endpoints, the `workbuddy` and
  * `workbuddy-ai` providers, their configuration cards, and their

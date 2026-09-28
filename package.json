@@ -61,7 +61,8 @@
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-model-selection",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
     }
@@ -87,8 +88,9 @@
     "@deepseek-ai/dsh-client-ui-conversation": "0.1.6-alpha.2",
     "@deepseek-ai/dsh-client-ui-model-selection": "0.1.6-alpha.2",
     "@deepseek-ai/dsh-client-ui-plugin-manager": "^0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-credentials": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-home-paths": "^0.1.6-alpha.2",
@@ -96,7 +98,7 @@
     "@deepseek-ai/dsh-llm": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-llm-pi-ai": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-settings": "^0.1.6-alpha.2",
-    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/schemastery": "^3.18.4",
     "@earendil-works/pi-ai": "^0.85.1",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",

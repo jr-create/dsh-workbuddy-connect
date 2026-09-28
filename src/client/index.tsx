@@ -16,11 +16,13 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: the two slot declarations this bundle registers into. The 0.1.5
 // settings tab declares `settings.plugin.item`; the 0.1.6+ Plugins page
-// declares `plugins.bundle.config`. Cross-plugin collaboration goes through
+// declares `plugins.bundle.config`; the settings shell (0.1.6+) declares
+// `settings.section`. Cross-plugin collaboration goes through
 // cordis services, so value imports would fail the client bundle-purity gate;
 // at runtime each host declares only the slot it ships.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -33,6 +35,8 @@ import { WORKBUDDY_CONNECT_VERSION } from '../version.ts'
 import { WorkBuddyConfigPage } from './WorkBuddyConfigPage.tsx'
 import { CARD_VARIANTS, WorkBuddyPluginCard } from './WorkBuddyPluginCard.tsx'
 import type { WorkBuddyPluginCardInjected } from './WorkBuddyPluginCard.tsx'
+import { PLUGIN_ENTRY_ID, WorkBuddySettingsSection } from './WorkBuddySettingsSection.tsx'
+import type { SectionConfigForm } from './WorkBuddySettingsSection.tsx'
 import { en, zh } from './locales.ts'
 import type { WorkBuddySettingsKey } from './locales.ts'
 
@@ -92,8 +96,11 @@ export const BUNDLE_NAME = 'dsh-workbuddy-connect'
 // `modelDirectories` reads the active session through `remote.session`.
 // Declaring that dependency at the client entry is required by the Desktop
 // renderer; without it Cordis rejects `directoryFor()` before this bundle can
-// finish registering its contributions.
-export const inject = ['slots', 'locale', 'remote', 'remote.session']
+// finish registering its contributions. `configForms` is the settings
+// domain's shared form transport (provided by `@deepseek-ai/dsh-client-ui-settings`,
+// composed through this bundle's `dsh.client.inject` list) — the settings
+// page reads and writes the plugin's volatile config through it.
+export const inject = ['slots', 'locale', 'remote', 'remote.session', 'configForms']
 
 /** Prefix every guarded client contribution's degradation logs with this. */
 const CLIENT_CONTRIBUTION_FAILED = '[dsh-workbuddy-connect] client contribution failed to load (host provider unaffected):'
@@ -213,6 +220,36 @@ export function apply(ctx: ClientContext): void {
         key: BUNDLE_NAME,
         locale: namespace,
       }, WorkBuddyConfigPage)) ?? NOOP_DISPOSER
+    ))
+  })
+  // SEAM THREE — the settings shell's own page (DSH 0.1.6+ shell, present on
+  // 0.1.7 where the legacy per-variant sections are gone). One page holding
+  // the plugin's parameters (edited through the shared `configForms`
+  // transport against the plugin's Host entry) plus the two account cards.
+  // The form is fetched only when the shell declares the slot, so a host
+  // without the settings page seam shows no trace of it; `configForms`
+  // itself degrades to `undefined` when the settings domain did not compose,
+  // and the page then contributes just the two cards. The form rides the
+  // component closure — the `settings.section` contract carries no registrant
+  // inject face, and a wrapper component would be one more indirection for
+  // the same result.
+  guardClientContribution('settings.section page', () => {
+    const configForms = (ctx as ClientContext & { configForms?: { get(entryId: string): unknown } }).configForms
+    const form = configForms?.get(PLUGIN_ENTRY_ID)
+    ctx.slots.inject('settings.section', () => (
+      guardClientContribution('settings.section page', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'workbuddy',
+        order: 20,
+        label: () => t('title'),
+        locale: namespace,
+      }, props => (
+        <WorkBuddySettingsSection
+          {...props}
+          t={t}
+          form={form as unknown as SectionConfigForm | undefined}
+        />
+      ))) ?? NOOP_DISPOSER
     ))
   })
   // The reasoning-probe seat in the conversation composer. `modelDirectories`

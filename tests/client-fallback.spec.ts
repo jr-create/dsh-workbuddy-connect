@@ -42,7 +42,7 @@ interface Harness {
 }
 
 /** Which slot registrations exist as declarations (callback fires at inject). */
-const ALL_SLOTS = ['settings.plugin.item', 'plugins.bundle.config', 'conversation.input.right', 'shell.overlay']
+const ALL_SLOTS = ['settings.plugin.item', 'plugins.bundle.config', 'settings.section', 'conversation.input.right', 'shell.overlay']
 
 /**
  * Build the fake host context. `failInject` throws from a `ctx.slots.inject`
@@ -111,6 +111,7 @@ const ALL_REGISTRATIONS: RecordedRegistration[] = [
   { name: 'settings.plugin.item', key: 'workbuddy' },
   { name: 'settings.plugin.item', key: 'workbuddy-ai' },
   { name: 'plugins.bundle.config', key: BUNDLE_NAME },
+  { name: 'settings.section', id: 'workbuddy' },
   { name: 'conversation.input.right', id: 'workbuddy-probe' },
 ]
 
@@ -124,7 +125,7 @@ describe('client contribution isolation', () => {
     expect(() => apply(h.ctx)).not.toThrow()
     expect(h.registered).toEqual(ALL_REGISTRATIONS)
     expect(h.injectedSlots).toEqual([
-      'shell.overlay', 'settings.plugin.item', 'settings.plugin.item', 'plugins.bundle.config', 'conversation.input.right',
+      'shell.overlay', 'settings.plugin.item', 'settings.plugin.item', 'plugins.bundle.config', 'settings.section', 'conversation.input.right',
     ])
     expect(h.enteredModelDirectories()).toBe(true)
     expect(h.errors).toHaveLength(0)
@@ -142,6 +143,7 @@ describe('client contribution isolation', () => {
       { name: 'shell.overlay', id: 'workbuddy-update' },
       { name: 'settings.plugin.item', key: 'workbuddy-ai' },
       { name: 'plugins.bundle.config', key: BUNDLE_NAME },
+      { name: 'settings.section', id: 'workbuddy' },
       { name: 'conversation.input.right', id: 'workbuddy-probe' },
     ])
     expect(h.errors).toHaveLength(1)
@@ -158,6 +160,7 @@ describe('client contribution isolation', () => {
       { name: 'shell.overlay', id: 'workbuddy-update' },
       { name: 'settings.plugin.item', key: 'workbuddy' },
       { name: 'settings.plugin.item', key: 'workbuddy-ai' },
+      { name: 'settings.section', id: 'workbuddy' },
       { name: 'conversation.input.right', id: 'workbuddy-probe' },
     ])
     expect(h.errors).toHaveLength(1)
@@ -187,7 +190,7 @@ describe('client contribution isolation', () => {
 
   it('degrades every contribution independently under a total slot-API breakage', () => {
     // The rc.6→rc.7-style API break: every slots.inject throws. Each of the
-    // four contributions logs its own degradation, none rethrows into the
+    // five contributions logs its own degradation, none rethrows into the
     // loader, and the locale copy still lands.
     const h = harness({ failInject: () => 'slots.inject is not a function' })
     expect(() => apply(h.ctx)).not.toThrow()

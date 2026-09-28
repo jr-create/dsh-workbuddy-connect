@@ -1589,9 +1589,10 @@ declare const WORKBUDDY_SETTINGS_NS: SettingsNamespace;
  * they carry one more duty — the settings Plugins tab dispatches a card by
  * rendering `settings.plugin.item` with `entryKey = ns` for each namespace the
  * Host serves, so each variant's card needs a served section whose namespace
- * equals its id. DSH 0.1.6+ ignores that pairing (its Plugins page renders the
- * bundle's single `plugins.bundle.config` entry, keyed by package name), which
- * costs nothing: a section that names no card renders no duplicate.
+ * equals its id. DSH 0.1.6+ ignores that pairing (the browser half's
+ * settings page is one `settings.section` entry keyed by the bundle's package
+ * name, which mounts both variants itself), which costs nothing: a section
+ * that names no card renders no duplicate.
  */
 declare const WORKBUDDY_AI_SETTINGS_NS: SettingsNamespace;
 /** Plugin configuration. */

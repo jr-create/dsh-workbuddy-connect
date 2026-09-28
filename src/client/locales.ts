@@ -5,6 +5,12 @@ export const en = {
   intro: 'Use the models in the WorkBuddy desktop app directly in DSH — zero configuration, ready out of the box.',
   titleAI: 'DSH WorkBuddy AI Connect',
   introAI: 'Use the models in the WorkBuddy AI international desktop app directly in DSH — zero configuration, ready out of the box.',
+  /** Settings-nav row for this bundle's page. Brand name: untranslated. */
+  nav: 'WorkBuddy',
+  /** Heading of the settings page itself; the shell supplies no title. */
+  sectionTitle: 'WorkBuddy Connection',
+  /** One-line explanation under the settings page heading. */
+  sectionIntro: "Uses the WorkBuddy desktop app's sign-in — no extra configuration.",
   expand: 'Expand',
   collapse: 'Collapse',
   loading: 'Loading account…',
@@ -146,6 +152,12 @@ export const zh: Record<WorkBuddySettingsKey, string> = {
   intro: '在 DSH 中直接使用 WorkBuddy 桌面 App 包含的模型，开箱即用，无需额外配置。',
   titleAI: 'DSH WorkBuddy AI Connect',
   introAI: '在 DSH 中直接使用 WorkBuddy AI 国际版桌面 App 包含的模型，开箱即用，无需额外配置。',
+  /** 设置页导航行文案。品牌名，不翻译。 */
+  nav: 'WorkBuddy',
+  /** 设置页自身的标题；外壳不提供标题。 */
+  sectionTitle: 'WorkBuddy 连接',
+  /** 设置页标题下的一句话说明。 */
+  sectionIntro: '沿用 WorkBuddy 桌面端的登录状态，无需额外配置。',
   expand: '展开',
   collapse: '收起',
   loading: '正在读取账号…',

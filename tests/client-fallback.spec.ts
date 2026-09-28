@@ -110,8 +110,8 @@ const ALL_REGISTRATIONS: RecordedRegistration[] = [
   { name: 'shell.overlay', id: 'workbuddy-update' },
   { name: 'settings.plugin.item', key: 'workbuddy' },
   { name: 'settings.plugin.item', key: 'workbuddy-ai' },
-  { name: 'plugins.bundle.config', key: BUNDLE_NAME },
-  { name: 'settings.section', id: 'workbuddy' },
+  // A `list` slot: the registry requires `id`; `order` places the nav row.
+  { name: 'settings.section', id: BUNDLE_NAME },
   { name: 'conversation.input.right', id: 'workbuddy-probe' },
 ]
 
@@ -133,8 +133,8 @@ describe('client contribution isolation', () => {
 
   it('keeps the second card and both other seams when the first card registration throws', () => {
     // The deferred register for the FIRST legacy card breaks (e.g. its key
-    // collides); the isolation contract: the second card, the Plugins-page
-    // entry, and the probe control all still register.
+    // collides); the isolation contract: the second card, the settings page,
+    // and the probe control all still register.
     const h = harness({ failRegister: (name, key) => name === 'settings.plugin.item' && key === 'workbuddy'
       ? 'keyed slot already has an entry for key workbuddy'
       : undefined })
@@ -142,8 +142,7 @@ describe('client contribution isolation', () => {
     expect(h.registered).toEqual([
       { name: 'shell.overlay', id: 'workbuddy-update' },
       { name: 'settings.plugin.item', key: 'workbuddy-ai' },
-      { name: 'plugins.bundle.config', key: BUNDLE_NAME },
-      { name: 'settings.section', id: 'workbuddy' },
+      { name: 'settings.section', id: BUNDLE_NAME },
       { name: 'conversation.input.right', id: 'workbuddy-probe' },
     ])
     expect(h.errors).toHaveLength(1)
@@ -151,20 +150,22 @@ describe('client contribution isolation', () => {
     expect(String(h.errors[0])).toContain('host provider unaffected')
   })
 
-  it('keeps the probe control when the plugins.bundle.config registration throws', () => {
-    const h = harness({ failRegister: name => name === 'plugins.bundle.config'
-      ? 'keyed slot "plugins.bundle.config" requires options.key'
+  it('keeps the probe control when the settings.section registration throws', () => {
+    // The settings page's deferred register breaks — e.g. the shell already
+    // holds an entry with this id. The isolation contract: both legacy cards
+    // and the probe control still register.
+    const h = harness({ failRegister: name => name === 'settings.section'
+      ? 'list slot "settings.section" already has an entry with id "dsh-workbuddy-connect"'
       : undefined })
     expect(() => apply(h.ctx)).not.toThrow()
     expect(h.registered).toEqual([
       { name: 'shell.overlay', id: 'workbuddy-update' },
       { name: 'settings.plugin.item', key: 'workbuddy' },
       { name: 'settings.plugin.item', key: 'workbuddy-ai' },
-      { name: 'settings.section', id: 'workbuddy' },
       { name: 'conversation.input.right', id: 'workbuddy-probe' },
     ])
     expect(h.errors).toHaveLength(1)
-    expect(String(h.errors[0])).toContain('plugins.bundle.config page')
+    expect(String(h.errors[0])).toContain('settings.section page')
   })
 
   it('keeps both settings seams when the probe contribution throws', () => {
@@ -174,7 +175,7 @@ describe('client contribution isolation', () => {
       ? 'slot conversation.input.right is not declared'
       : undefined })
     expect(() => apply(h.ctx)).not.toThrow()
-    expect(h.registered).toEqual(ALL_REGISTRATIONS.slice(0, 4))
+    expect(h.registered).toEqual(ALL_REGISTRATIONS.slice(0, 3))
     expect(h.enteredModelDirectories()).toBe(true)
     expect(h.errors).toHaveLength(1)
     expect(String(h.errors[0])).toContain('conversation probe control')
@@ -190,13 +191,13 @@ describe('client contribution isolation', () => {
 
   it('degrades every contribution independently under a total slot-API breakage', () => {
     // The rc.6→rc.7-style API break: every slots.inject throws. Each of the
-    // five contributions logs its own degradation, none rethrows into the
+    // four slot contributions logs its own degradation, none rethrows into the
     // loader, and the locale copy still lands.
     const h = harness({ failInject: () => 'slots.inject is not a function' })
     expect(() => apply(h.ctx)).not.toThrow()
     expect(h.registered).toEqual([])
     expect(h.injectedSlots).toEqual([])
     expect(h.enteredModelDirectories()).toBe(true)
-    expect(h.errors).toHaveLength(5)
+    expect(h.errors).toHaveLength(4)
   })
 })

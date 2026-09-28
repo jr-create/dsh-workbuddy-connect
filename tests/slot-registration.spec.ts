@@ -7,18 +7,19 @@ import { CARD_VARIANTS } from '../src/client/WorkBuddyPluginCard.tsx'
  *
  * DSH 0.1.5 renders plugin cards in the settings Plugins tab, which dispatches
  * the keyed `settings.plugin.item` slot once per served settings namespace —
- * one key per WorkBuddy variant. DSH 0.1.6 moved plugin configuration to the
- * Plugins page, where a bundle carries a single `plugins.bundle.config` entry
- * keyed by its package name and renders both variants inside it. The client
- * entry registers BOTH seams unconditionally and lets slot-declaration
- * lifetime pick: a callback for a slot the host never declares simply never
- * runs. This file pins the consequences of that shape against the real
- * registry rather than trusting the registration calls.
+ * one key per WorkBuddy variant. DSH 0.1.6+ gives the settings shell pages of
+ * its own: `settings.section` is a LIST slot whose entry is keyed by `id`
+ * (not by `key` — the registry rejects a `key`-only registration on a list
+ * slot), ordered by `order`, and labelled by registrant-localized `label`
+ * text. The client entry registers both seams unconditionally and lets
+ * slot-declaration lifetime pick: a callback for a slot the host never
+ * declares simply never runs. This file pins the consequences of that shape
+ * against the real registry rather than trusting the registration calls.
  *
- * Both slots are keyed, so whether a key is accepted (and whether a duplicate
- * or an undeclared slot is rejected) is a property of the real slot registry
- * rather than of this plugin's code. These tests drive the actual `SlotCore`
- * to answer that, instead of trusting that the registration shape works.
+ * Whether a key/id is accepted (and whether a duplicate or an undeclared slot
+ * is rejected) is a property of the real slot registry rather than of this
+ * plugin's code. These tests drive the actual `SlotCore` to answer that,
+ * instead of trusting that the registration shape works.
  *
  * Only the variant ids are needed from the card module (the components
  * themselves cannot render in this Node environment), and the register calls
@@ -28,7 +29,7 @@ import { CARD_VARIANTS } from '../src/client/WorkBuddyPluginCard.tsx'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** The key the bundle registers under; the 0.1.6+ page looks the entry up by name. */
+/** The id the bundle registers its settings page under. */
 const BUNDLE_KEY = 'dsh-workbuddy-connect'
 
 /** Minimal component stand-in; the registry only stores the reference. */
@@ -45,12 +46,14 @@ const register = (core: SlotCore, options: Record<string, unknown>): unknown =>
  * dual-seam design detects, so the tests declare them per host generation.
  */
 function declareHostSlots(core: SlotCore, slots: readonly string[]): void {
-  const children: Record<string, { kind: 'keyed'; keyProps: Record<string, object> }> = {}
+  const children: Record<string, Record<string, unknown>> = {}
   if (slots.includes('settings.plugin.item')) {
     children['settings.plugin.item'] = { kind: 'keyed', keyProps: { workbuddy: {}, 'workbuddy-ai': {} } }
   }
-  if (slots.includes('plugins.bundle.config')) {
-    children['plugins.bundle.config'] = { kind: 'keyed', keyProps: { [BUNDLE_KEY]: {} } }
+  // `settings.section` is a list slot: no `keyProps` table, entries are
+  // ordered and identified by their own `id`.
+  if (slots.includes('settings.section')) {
+    children['settings.section'] = { kind: 'list' }
   }
   register(core, { name: 'root', children })
 }
@@ -62,9 +65,15 @@ function registerLegacyCards(core: SlotCore): void {
   }
 }
 
-/** The client entry's 0.1.6-seam registration: one bundle-keyed page. */
-function registerBundlePage(core: SlotCore): void {
-  register(core, { name: 'plugins.bundle.config', key: BUNDLE_KEY })
+/** The client entry's 0.1.6+-seam registration: one settings page. */
+function registerSettingsPage(core: SlotCore): void {
+  register(core, {
+    name: 'settings.section',
+    key: BUNDLE_KEY,
+    id: BUNDLE_KEY,
+    order: 16,
+    label: 'WorkBuddy',
+  })
 }
 
 describe('settings.plugin.item carries both cards (DSH 0.1.5 seam)', () => {
@@ -104,71 +113,66 @@ describe('settings.plugin.item carries both cards (DSH 0.1.5 seam)', () => {
   })
 })
 
-describe('plugins.bundle.config carries the bundle (DSH 0.1.6+ seam)', () => {
-  it('accepts the bundle-keyed registration the client entry makes', () => {
+describe('settings.section carries the settings page (DSH 0.1.6+ seam)', () => {
+  it('accepts the registration the client entry makes', () => {
     const core = new SlotCore()
-    declareHostSlots(core, ['plugins.bundle.config'])
-    expect(() => registerBundlePage(core)).not.toThrow()
-    expect((core.entries as any)('plugins.bundle.config')).toHaveLength(1)
+    declareHostSlots(core, ['settings.section'])
+    expect(() => registerSettingsPage(core)).not.toThrow()
+    expect((core.entries as any)('settings.section')).toHaveLength(1)
   })
 
-  it('renders both variants from that one entry', () => {
-    // The regression this guards: the slot is keyed by BUNDLE, not by variant,
-    // so "one card per variant" can no longer mean "one registration per
-    // variant". Both variants have to be reachable from the single component the
-    // entry mounts, which is what the page iterates.
-    expect(CARD_VARIANTS.map(card => card.id)).toEqual(['workbuddy', 'workbuddy-ai'])
-  })
-
-  it('keeps one component mounting both cards, not one key per card', () => {
+  it('keys the entry by id, with the order and label the shell reads', () => {
     const core = new SlotCore()
-    declareHostSlots(core, ['plugins.bundle.config'])
-    registerBundlePage(core)
-    // The projection returns the winning ENTRY per key, so the key is read off
-    // `options` — one cell keyed by the bundle, holding both cards inside it.
-    const cells = (core.entriesOfSlot as any)('plugins.bundle.config') as { options: { key?: string } }[]
+    declareHostSlots(core, ['settings.section'])
+    registerSettingsPage(core)
+    const cells = (core.entriesOfSlot as any)('settings.section') as { options: Record<string, unknown> }[]
     expect(cells).toHaveLength(1)
-    expect(cells[0]!.options.key).toBe(BUNDLE_KEY)
+    expect(cells[0]!.options.id).toBe(BUNDLE_KEY)
+    expect(cells[0]!.options.order).toBe(16)
+    expect(cells[0]!.options.label).toBe('WorkBuddy')
   })
 
-  it('rejects a second registration under the same key', () => {
+  it('requires options.id — a key alone is rejected on a list slot', () => {
+    // THE CONTRACT BOUNDARY. `settings.section` is `kind: 'list'`, so the
+    // registry demands `id`; `settings.plugin.item` is `kind: 'keyed'` and
+    // demands `key`. The client entry passes both on the settings page so the
+    // shell's nav (`id`) and its `inject()` filter (`key`) agree, but `id` is
+    // the one the registry would refuse to do without.
+    const core = new SlotCore()
+    declareHostSlots(core, ['settings.section'])
+    expect(() => register(core, { name: 'settings.section', key: BUNDLE_KEY, order: 16, label: 'WorkBuddy' }))
+      .toThrow(/requires options\.id/)
+  })
+
+  it('rejects a second entry under the same id', () => {
     // Two profiles referencing the bundle, or the browser half loaded twice,
     // collide here. The client entry's try/catch is what turns that collision
     // into a `console.error` instead of a failed-loader banner.
     const core = new SlotCore()
-    declareHostSlots(core, ['plugins.bundle.config'])
-    registerBundlePage(core)
-    expect(() => registerBundlePage(core)).toThrow(/already has an entry for key/)
-  })
-
-  it('requires an explicit key, which is why the entry passes one', () => {
-    const core = new SlotCore()
-    declareHostSlots(core, ['plugins.bundle.config'])
-    // This is the kind of breakage the client entry's try/catch exists for.
-    expect(() => register(core, { name: 'plugins.bundle.config' }))
-      .toThrow(/requires options.key/)
+    declareHostSlots(core, ['settings.section'])
+    registerSettingsPage(core)
+    expect(() => registerSettingsPage(core)).toThrow(/already has an entry with id/)
   })
 })
 
 describe('the two seams coexist without interference', () => {
   it('lands every registration when one host declared both slots', () => {
     // A host generation that keeps the old settings tab while also shipping
-    // the Plugins page (or a registry snapshot spanning both) must hold all
-    // three registrations at once; the keys live in different slots, so they
-    // cannot collide.
+    // the settings shell must hold all three registrations at once; the keys
+    // live in different slots, so they cannot collide.
     const core = new SlotCore()
-    declareHostSlots(core, ['settings.plugin.item', 'plugins.bundle.config'])
+    declareHostSlots(core, ['settings.plugin.item', 'settings.section'])
     expect(() => {
       registerLegacyCards(core)
-      registerBundlePage(core)
+      registerSettingsPage(core)
     }).not.toThrow()
     expect((core.entriesOfSlot as any)('settings.plugin.item')).toHaveLength(2)
-    expect((core.entriesOfSlot as any)('plugins.bundle.config')).toHaveLength(1)
+    expect((core.entriesOfSlot as any)('settings.section')).toHaveLength(1)
   })
 
   it('rejects registering into a slot the host never declared', () => {
     // THE CAPABILITY BOUNDARY. On a 0.1.5 host nothing declares
-    // `plugins.bundle.config`, and on a 0.1.6+ host nothing declares
+    // `settings.section`, and on a 0.1.6+ host nothing declares
     // `settings.plugin.item` — a direct `register` into the missing slot
     // throws. That is exactly why the client entry mounts each seam through
     // `ctx.slots.inject`, which runs its callback only once the slot's
@@ -176,10 +180,10 @@ describe('the two seams coexist without interference', () => {
     // not ship) instead of registering eagerly.
     const core = new SlotCore()
     declareHostSlots(core, ['settings.plugin.item'])
-    expect(() => registerBundlePage(core)).toThrow(/not declared/)
+    expect(() => registerSettingsPage(core)).toThrow(/not declared/)
 
     const other = new SlotCore()
-    declareHostSlots(other, ['plugins.bundle.config'])
+    declareHostSlots(other, ['settings.section'])
     expect(() => registerLegacyCards(other)).toThrow(/not declared/)
   })
 })

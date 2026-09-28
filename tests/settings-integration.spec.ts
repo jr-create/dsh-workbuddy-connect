@@ -240,9 +240,10 @@ describe('WorkBuddy Host settings integration', () => {
     // `settings.plugin.item` with `entryKey = ns` for each served namespace
     // and skips a key that names no served ns, so every variant id must stay
     // an installed section's namespace for the 0.1.5 cards to appear. (DSH
-    // 0.1.6+ ignores that pairing — its Plugins page renders the bundle's
-    // `plugins.bundle.config` entry by package name — and the Models page
-    // joins on neither: no configurable-provider entry is made.)
+    // 0.1.6+ ignores that pairing — the browser half's settings page is one
+    // `settings.section` entry keyed by the bundle's package name, mounting
+    // both variants itself — and the Models page joins on neither: no
+    // configurable-provider entry is made.)
     const served = new Set(ctx.settings.describe().map(entry => entry.ns))
     for (const variant of WorkBuddy.WORKBUDDY_VARIANTS) {
       expect(served, `variant "${variant.id}" must own a served settings namespace (its 0.1.5 card key and its fields)`).toContain(variant.id)

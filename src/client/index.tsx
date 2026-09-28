@@ -5,23 +5,22 @@
  * One bundle serves two DSH generations. DSH 0.1.5 renders plugin cards in the
  * settings Plugins tab, which dispatches the keyed `settings.plugin.item` slot
  * once per served settings namespace (one card per WorkBuddy variant). DSH
- * 0.1.6 moved plugin configuration to the Plugins page, whose
- * `plugins.bundle.config` slot carries one bundle-keyed entry that renders both
- * variants itself. `ctx.slots.inject` follows the slot's declaration lifetime —
- * the callback runs where the slot is declared and simply never runs where it
- * is not — so registering BOTH seams needs no host-version check: each host
- * materializes exactly the seam it ships.
+ * 0.1.6+ gives the settings shell pages of its own through the
+ * `settings.section` slot: one ordered entry per page, keyed by `id`, which
+ * this bundle uses to host its parameters and both variant cards.
+ * `ctx.slots.inject` follows the slot's declaration lifetime — the callback
+ * runs where the slot is declared and simply never runs where it is not — so
+ * registering both seams needs no host-version check: each host materializes
+ * exactly the seam it ships.
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: the two slot declarations this bundle registers into. The 0.1.5
-// settings tab declares `settings.plugin.item`; the 0.1.6+ Plugins page
-// declares `plugins.bundle.config`; the settings shell (0.1.6+) declares
-// `settings.section`. Cross-plugin collaboration goes through
-// cordis services, so value imports would fail the client bundle-purity gate;
-// at runtime each host declares only the slot it ships.
+// settings tab declares `settings.plugin.item`; the settings shell (0.1.6+)
+// declares `settings.section`. Cross-plugin collaboration goes through cordis
+// services, so value imports would fail the client bundle-purity gate; at
+// runtime each host declares only the slot it ships.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -32,7 +31,6 @@ import { WorkBuddyProbeControl } from './WorkBuddyProbeControl.tsx'
 import { WorkBuddyUpdateOverlay } from './WorkBuddyUpdateNotice.tsx'
 import { WorkBuddyUpdateStore } from './update-store.ts'
 import { WORKBUDDY_CONNECT_VERSION } from '../version.ts'
-import { WorkBuddyConfigPage } from './WorkBuddyConfigPage.tsx'
 import { CARD_VARIANTS, WorkBuddyPluginCard } from './WorkBuddyPluginCard.tsx'
 import type { WorkBuddyPluginCardInjected } from './WorkBuddyPluginCard.tsx'
 import { PLUGIN_ENTRY_ID, WorkBuddySettingsSection } from './WorkBuddySettingsSection.tsx'
@@ -73,8 +71,9 @@ export const name = 'dsh-workbuddy-connect-client'
 /**
  * The bundle's package name, which is also this half's configuration key.
  *
- * The Plugins page dispatches `plugins.bundle.config` by the bundle's package
- * name, so the key has to spell exactly what the profile installs.
+ * The settings shell keys `settings.section` entries by `id`, and the value
+ * has to spell exactly what the profile installs so the nav row, the
+ * `only` filter, and the plugin's own settings namespace all agree.
  */
 export const BUNDLE_NAME = 'dsh-workbuddy-connect'
 
@@ -87,19 +86,24 @@ export const BUNDLE_NAME = 'dsh-workbuddy-connect'
  * `@deepseek-ai/dsh-client-ui-renderer` and `locale` in
  * `@deepseek-ai/dsh-client-locale`. Neither slot owner is named here on
  * purpose: `settings.plugin.item`'s declarer (`…-ui-settings-plugins`) is
- * absent from 0.1.6+ hosts and `plugins.bundle.config`'s declarer
- * (`…-ui-plugin-manager`) is absent from 0.1.5 hosts, and the seam choice is
- * made by slot-declaration lifetime, not by activation order — `ctx.slots.inject`
+ * absent from 0.1.6+ hosts, and the seam choice is made by slot-declaration
+ * lifetime, not by activation order — `ctx.slots.inject`
  * fires whenever the declaring package commits the slot, before or after this
- * fiber starts.
+ * fiber starts. (`settings.section`'s declarer is the settings shell itself,
+ * which this bundle does not name: the shell is a resident bundle the host
+ * provides, so it is absent from `dsh.client.inject` and needs no declaration
+ * here — only its slot types, imported type-only above.)
  */
 // `modelDirectories` reads the active session through `remote.session`.
 // Declaring that dependency at the client entry is required by the Desktop
 // renderer; without it Cordis rejects `directoryFor()` before this bundle can
 // finish registering its contributions. `configForms` is the settings
-// domain's shared form transport (provided by `@deepseek-ai/dsh-client-ui-settings`,
-// composed through this bundle's `dsh.client.inject` list) — the settings
-// page reads and writes the plugin's volatile config through it.
+// domain's shared form transport (provided by `@deepseek-ai/dsh-client-ui-settings`);
+// the settings page reads and writes the plugin's volatile config through it.
+// It is OPTIONAL: the settings shell is a resident bundle the host composes,
+// so `ui-settings` is deliberately absent from `dsh.client.inject`, and on a
+// host that did not compose it the service resolves to `undefined` — the page
+// then contributes just the two cards (see `WorkBuddySettingsSection`).
 export const inject = ['slots', 'locale', 'remote', 'remote.session', 'configForms']
 
 /** Prefix every guarded client contribution's degradation logs with this. */
@@ -209,23 +213,17 @@ export function apply(ctx: ClientContext): void {
       ))
     })
   }
-  // SEAM TWO — DSH 0.1.6+'s Plugins page. One configuration entry for the
-  // whole bundle, keyed by its package name as the page dispatches it; the
-  // entry mounts both variants' cards itself. On 0.1.5 hosts nothing
-  // declares this slot, so it never runs there.
-  guardClientContribution('plugins.bundle.config page', () => {
-    ctx.slots.inject('plugins.bundle.config', () => (
-      guardClientContribution('plugins.bundle.config page', () => ctx.slots.register({
-        name: 'plugins.bundle.config',
-        key: BUNDLE_NAME,
-        locale: namespace,
-      }, WorkBuddyConfigPage)) ?? NOOP_DISPOSER
-    ))
-  })
-  // SEAM THREE — the settings shell's own page (DSH 0.1.6+ shell, present on
-  // 0.1.7 where the legacy per-variant sections are gone). One page holding
-  // the plugin's parameters (edited through the shared `configForms`
-  // transport against the plugin's Host entry) plus the two account cards.
+  // SEAM TWO — the settings shell's own page (DSH 0.1.6+ shell; on 0.1.7 it is
+  // the only surface left, since the legacy per-variant sections are gone).
+  // One page holding the plugin's parameters (edited through the shared
+  // `configForms` transport against the plugin's Host entry) plus the two
+  // account cards. The slot is a `list` slot: the registry requires
+  // `options.id` (a `key` alone is rejected), and the shell's nav matches on
+  // `id`/`order` while `inject()` filters on the same value, so both are
+  // spelled `BUNDLE_NAME`. `order: 16` lands the row right after the host's
+  // own "内置插件 / Built-in plugins" section (15) and before Agent presets
+  // (20); `label` is registrant-localized display text, so the shell never
+  // subscribes locale state and the copy is re-registered on locale change.
   // The form is fetched only when the shell declares the slot, so a host
   // without the settings page seam shows no trace of it; `configForms`
   // itself degrades to `undefined` when the settings domain did not compose,
@@ -239,9 +237,9 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.inject('settings.section', () => (
       guardClientContribution('settings.section page', () => ctx.slots.register({
         name: 'settings.section',
-        id: 'workbuddy',
-        order: 20,
-        label: () => t('title'),
+        id: BUNDLE_NAME,
+        order: 16,
+        label: t('nav'),
         locale: namespace,
       }, props => (
         <WorkBuddySettingsSection

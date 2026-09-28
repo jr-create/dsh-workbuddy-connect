@@ -94,10 +94,11 @@ function useFormSnapshot(form: SectionConfigForm | undefined): SectionFormSnapsh
 }
 
 /**
- * Render the bundle's settings page: the parameter form first (the values a
- * user changes rarely), then the two account cards (the live status they
- * keep coming back to). The shell owns the nav and the page frame; this
- * component supplies only the content column.
+ * Render the bundle's settings page: its own heading first (the shell's
+ * `settings-scroll` column is a bare scroll box with no title and no padding),
+ * then the parameter form (the values a user changes rarely), then the two
+ * account cards (the live status they keep coming back to). The shell still
+ * owns the nav row and the page frame.
  *
  * `form` arrives through the registrant's `inject` face in production (the
  * client entry passes `ctx.configForms.get(PLUGIN_ENTRY_ID)`); the prop keeps
@@ -109,7 +110,11 @@ export function WorkBuddySettingsSection(
   const { form } = props
   const t = props.t as (key: WorkBuddySettingsKey, params?: Record<string, unknown>) => string
   return (
-    <div style={pageStyle}>
+    <section style={pageStyle}>
+      {/* The shell's `settings-scroll` column is a bare vertical scroll box:
+          it supplies no heading and no padding, so the page draws its own. */}
+      <h2 style={sectionTitleStyle}>{t('sectionTitle')}</h2>
+      <p style={sectionIntroStyle}>{t('sectionIntro')}</p>
       {form === undefined
         ? null
         : <WorkBuddyParamsForm form={form} t={t} />}
@@ -118,7 +123,7 @@ export function WorkBuddySettingsSection(
           <WorkBuddyPluginCard key={variant.id} t={t} variant={variant} />
         ))}
       </ul>
-    </div>
+    </section>
   )
 }
 
@@ -289,6 +294,23 @@ export function WorkBuddyParamsForm(
       {!writable && <p style={hintStyle}>{t('paramsUnavailable')}</p>}
     </section>
   )
+}
+
+/** Page heading: the settings shell's scroll column supplies no title. */
+const sectionTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 18,
+  lineHeight: '26px',
+  fontWeight: 600,
+  color: 'var(--dsw-alias-label-primary)',
+}
+
+/** One-line explanation under {@link sectionTitleStyle}. */
+const sectionIntroStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 14,
+  lineHeight: '22px',
+  color: 'var(--dsw-alias-label-secondary)',
 }
 
 const pageStyle: CSSProperties = {
